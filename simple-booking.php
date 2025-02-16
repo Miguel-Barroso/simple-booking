@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Simple Booking Plugin
- * Description: Version 1.6.8 - Date pickers moved to top, smaller width for date fields, price underneath, and larger message textarea.
- * Version: 1.6.8
+ * Description: Version 1.6.9 - Now uses Cloudflare Turnstile for spam protection, referencing keys from wp-config.
+ * Version: 1.6.9
  * Author: Miguel Barroso
  */
 
@@ -20,12 +20,20 @@ function simple_booking_form() {
             $booking_response = '<p style="color:green;">Tack för din bokning! Vi återkommer inom kort.</p>';
         } elseif ( 'failure' === $response ) {
             $booking_response = '<p style="color:red;">E-postmisslyckande: Kontrollera SMTP eller wp_mail-konfigurationen.</p>';
+        } elseif ( 'spam' === $response ) {
+            $booking_response = '<p style="color:red;">Spam-kontroll misslyckades. Försök igen.</p>';
         }
     }
 
+    // Pull the Turnstile site key from wp-config.php (if defined)
+    $turnstile_site_key = defined( 'TURNSTILE_SITE_KEY' ) ? TURNSTILE_SITE_KEY : '';
+
     ob_start(); 
     ?>
-    <!-- Inline CSS to demonstrate layout changes -->
+    <!-- Turnstile script (must be loaded once per page) -->
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+
+    <!-- Inline CSS just for demo layout -->
     <style>
         #simple-booking-form .form-row {
             margin-bottom: 10px;
@@ -33,23 +41,19 @@ function simple_booking_form() {
         #simple-booking-form label {
             display: inline-block;
             width: 100px; /* Adjust label width as needed */
-            margin-right: 2px;
+            margin-right: 5px;
         }
         #simple-booking-form input,
         #simple-booking-form textarea {
-            padding: 2px;  
+            padding: 5px;  
             max-width: 100%; 
         }
-
-        /* Make date fields smaller to reduce whitespace */
         .short-date-field {
-            width: 150px; 
+            width: 120px; 
         }
-
-        /* Make the textarea bigger */
         .big-textarea {
-            width: 352px;  /* or 100% if you want it to stretch */
-            height: 100px; /* increase as needed */
+            width: 250px;
+            height: 100px;
         }
     </style>
 
@@ -59,7 +63,7 @@ function simple_booking_form() {
         <!-- Pass the current page slug so it can be used in the email subject -->
         <input type="hidden" name="page_slug" value="<?php echo esc_attr( get_post_field( 'post_name', get_post() ) ); ?>">
 
-        <!-- Row 1: Startdatum & Slutdatum at the top (side by side) -->
+        <!-- Row 1: Start/End dates at top -->
         <div class="form-row">
             <label for="start-date">Startdatum:</label>
             <input 
@@ -71,7 +75,6 @@ function simple_booking_form() {
                 placeholder="yyyy-mm-dd" 
                 onchange="calculateNights()"
             >
-
             <label for="end-date" style="margin-left:20px;">Slutdatum:</label>
             <input 
                 type="date" 
@@ -111,7 +114,16 @@ function simple_booking_form() {
             <textarea id="message" name="message" class="big-textarea" placeholder="Skriv ett meddelande"></textarea>
         </div>
 
-        <!-- Row 7: Submit button -->
+        <!-- Row 7: Cloudflare Turnstile widget -->
+        <div class="form-row">
+            <div class="cf-challenge" 
+                 data-sitekey="<?php echo esc_attr( $turnstile_site_key ); ?>" 
+                 data-theme="light"
+                 style="margin-bottom:10px;">
+            </div>
+        </div>
+
+        <!-- Row 8: Submit button -->
         <div class="form-row">
             <button type="submit">Boka</button>
         </div>
@@ -148,6 +160,44 @@ function simple_booking_process() {
         exit;
     }
 
+    // 1. Retrieve Turnstile token from form submission
+    $turnstile_token = isset( $_POST['cf-turnstile-response'] ) ? sanitize_text_field( $_POST['cf-turnstile-response'] ) : '';
+    if ( empty( $turnstile_token ) ) {
+        wp_redirect( add_query_arg( 'booking_response', 'spam', wp_get_referer() ) );
+        exit;
+    }
+
+    // 2. Get secret key from wp-config.php
+    $secret_key = defined( 'TURNSTILE_SECRET_KEY' ) ? TURNSTILE_SECRET_KEY : '';
+
+    // 3. Verify token with Cloudflare Turnstile
+    $verify_url  = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+    $remote_ip   = $_SERVER['REMOTE_ADDR'];
+
+    $response = wp_remote_post( $verify_url, array(
+        'body' => array(
+            'secret'   => $secret_key,
+            'response' => $turnstile_token,
+            'remoteip' => $remote_ip,
+        ),
+    ) );
+
+    if ( is_wp_error( $response ) ) {
+        // Could not contact Turnstile
+        wp_redirect( add_query_arg( 'booking_response', 'spam', wp_get_referer() ) );
+        exit;
+    }
+
+    $response_body = wp_remote_retrieve_body( $response );
+    $result        = json_decode( $response_body, true );
+
+    if ( empty( $result['success'] ) || $result['success'] !== true ) {
+        // Turnstile says it's not a valid submission
+        wp_redirect( add_query_arg( 'booking_response', 'spam', wp_get_referer() ) );
+        exit;
+    }
+
+    // Turnstile verified successfully - proceed with booking
     $page_slug       = isset( $_POST['page_slug'] ) ? sanitize_text_field( $_POST['page_slug'] ) : 'n/a';
     $name            = sanitize_text_field( $_POST['name'] );
     $email           = sanitize_email( $_POST['email'] );
