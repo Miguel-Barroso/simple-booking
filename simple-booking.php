@@ -1,22 +1,34 @@
 <?php
 /**
  * Plugin Name: Simple Booking Plugin
- * Description: Version 1.6.4 - Display messages below form and fix page title in email subject.
- * Version: 1.6.4
+ * Description: Version 1.6.6 - Shows messages below the form and captures page slug in email subject.
+ * Version: 1.6.6
  * Author: Miguel Barroso
  */
 
-if (!defined('ABSPATH')) {
+if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-// Render form with AJAX-based result message below the submit button
+// Render form with messages displayed below the button
 function simple_booking_form() {
+    // Check if a response message exists via a query parameter
+    $booking_response = '';
+    if ( isset( $_GET['booking_response'] ) ) {
+        $response = sanitize_text_field( $_GET['booking_response'] );
+        if ( 'success' === $response ) {
+            $booking_response = '<p style="color:green;">Tack för din bokning! Vi återkommer inom kort.</p>';
+        } elseif ( 'failure' === $response ) {
+            $booking_response = '<p style="color:red;">E-postmisslyckande: Kontrollera SMTP eller wp_mail-konfigurationen.</p>';
+        }
+    }
     ob_start(); ?>
-    <form id="simple-booking-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+    <form id="simple-booking-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
         <input type="hidden" name="action" value="simple_booking">
-        <?php wp_nonce_field('simple_booking_action', 'simple_booking_nonce'); ?>
-
+        <?php wp_nonce_field( 'simple_booking_action', 'simple_booking_nonce' ); ?>
+        <!-- Pass the current page slug so it can be used in the email subject -->
+        <input type="hidden" name="page_slug" value="<?php echo esc_attr( get_post_field( 'post_name', get_post() ) ); ?>">
+        
         <label for="name">Namn:</label>
         <input type="text" id="name" name="name" placeholder="Ditt namn" required>
 
@@ -34,9 +46,8 @@ function simple_booking_form() {
 
         <p id="night-cost">Pris: 0 kr</p>
         <button type="submit">Boka</button>
-        
-        <div id="booking-response"></div>
     </form>
+    <div id="booking-response"><?php echo $booking_response; ?></div>
 
     <script>
         function calculateNights() {
@@ -53,43 +64,46 @@ function simple_booking_form() {
     <?php
     return ob_get_clean();
 }
-add_shortcode('simple_booking', 'simple_booking_form');
+add_shortcode( 'simple_booking', 'simple_booking_form' );
 
-// Process the booking form and display messages under the form
+// Named function to set the email content type to plain text.
+function set_plain_text_mail_content_type() {
+    return 'text/plain';
+}
+
+// Process booking and redirect back with a response
 function simple_booking_process() {
-    $response_message = '';
-
-    if (!isset($_POST['simple_booking_nonce']) || !wp_verify_nonce($_POST['simple_booking_nonce'], 'simple_booking_action')) {
-        $response_message = '<p style="color:red;">Ogiltig begäran: Nonce misslyckades.</p>';
-    } else {
-        $page_title = wp_get_document_title();
-        $name = sanitize_text_field($_POST['name']);
-        $email = sanitize_email($_POST['email']);
-        $message_content = sanitize_textarea_field($_POST['message']);
-        $start_date = sanitize_text_field($_POST['start_date']);
-        $end_date = sanitize_text_field($_POST['end_date']);
-        
-        $nights = max(0, (strtotime($end_date) - strtotime($start_date)) / 86400);
-        $total_price = $nights * 299;
-
-        add_filter('wp_mail_content_type', fn() => 'text/plain');
-        $mail_result = wp_mail(
-            get_option('admin_email'),
-            "Bokningsförfrågan från $page_title",
-            "Namn: $name\nE-post: $email\nMeddelande: $message_content\nPeriod: $start_date till $end_date\nAntal nätter: $nights\nPris: $total_price kr"
-        );
-        remove_filter('wp_mail_content_type', fn() => 'text/plain');
-
-        if ($mail_result) {
-            $response_message = '<p style="color:green;">Tack för din bokning! Vi återkommer inom kort.</p>';
-        } else {
-            $response_message = '<p style="color:red;">E-postmisslyckande: Kontrollera SMTP eller wp_mail-konfigurationen.</p>';
-        }
+    if ( ! isset( $_POST['simple_booking_nonce'] ) || ! wp_verify_nonce( $_POST['simple_booking_nonce'], 'simple_booking_action' ) ) {
+        wp_redirect( add_query_arg( 'booking_response', 'failure', wp_get_referer() ) );
+        exit;
     }
 
-    echo '<div id="booking-response">' . $response_message . '</div>';
+    // Use the page slug passed via the hidden field
+    $page_slug = isset( $_POST['page_slug'] ) ? sanitize_text_field( $_POST['page_slug'] ) : 'n/a';
+    
+    $name           = sanitize_text_field( $_POST['name'] );
+    $email          = sanitize_email( $_POST['email'] );
+    $message_content= sanitize_textarea_field( $_POST['message'] );
+    $start_date     = sanitize_text_field( $_POST['start_date'] );
+    $end_date       = sanitize_text_field( $_POST['end_date'] );
+
+    // Calculate nights (casting to integer to avoid decimals)
+    $nights = (int) max( 0, ( strtotime( $end_date ) - strtotime( $start_date ) ) / 86400 );
+    $total_price = $nights * 299;
+
+    // Set the email to plain text
+    add_filter( 'wp_mail_content_type', 'set_plain_text_mail_content_type' );
+    $mail_result = wp_mail(
+        get_option( 'admin_email' ),
+        "Bokningsförfrågan från sida: $page_slug",
+        "Namn: $name\nE-post: $email\nMeddelande: $message_content\nPeriod: $start_date till $end_date\nAntal nätter: $nights\nPris: $total_price kr"
+    );
+    remove_filter( 'wp_mail_content_type', 'set_plain_text_mail_content_type' );
+
+    $response = $mail_result ? 'success' : 'failure';
+    wp_redirect( add_query_arg( 'booking_response', $response, wp_get_referer() ) );
     exit;
 }
 
-add_action('admin_post_simple_booking', 'simple_booking_process');
-add_action('admin_post_nopriv_simple_booking', 'simple_booking_process');
+add_action( 'admin_post_simple_booking', 'simple_booking_process' );
+add_action( 'admin_post_nopriv_simple_booking', 'simple_booking_process' );
