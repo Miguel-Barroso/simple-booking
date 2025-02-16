@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Simple Booking Plugin
- * Description: Version 1.6.7 - Updated layout with placeholders for date fields (yyyy-mm-dd).
- * Version: 1.6.7
+ * Description: Version 1.6.8 - Date pickers moved to top, smaller width for date fields, price underneath, and larger message textarea.
+ * Version: 1.6.8
  * Author: Miguel Barroso
  */
 
@@ -33,13 +33,23 @@ function simple_booking_form() {
         #simple-booking-form label {
             display: inline-block;
             width: 100px; /* Adjust label width as needed */
-            margin-right: 5px;
+            margin-right: 2px;
         }
         #simple-booking-form input,
         #simple-booking-form textarea {
-            padding: 5px;  /* The requested padding */
-            width: 250px;  /* Adjust input/textarea width as desired */
-            max-width: 100%; /* Ensure it stays responsive */
+            padding: 2px;  
+            max-width: 100%; 
+        }
+
+        /* Make date fields smaller to reduce whitespace */
+        .short-date-field {
+            width: 150px; 
+        }
+
+        /* Make the textarea bigger */
+        .big-textarea {
+            width: 352px;  /* or 100% if you want it to stretch */
+            height: 100px; /* increase as needed */
         }
     </style>
 
@@ -49,35 +59,14 @@ function simple_booking_form() {
         <!-- Pass the current page slug so it can be used in the email subject -->
         <input type="hidden" name="page_slug" value="<?php echo esc_attr( get_post_field( 'post_name', get_post() ) ); ?>">
 
-        <!-- Row 1: Name label & field on same line -->
-        <div class="form-row">
-            <label for="name">Namn:</label>
-            <input type="text" id="name" name="name" placeholder="Ditt namn" required>
-        </div>
-
-        <!-- Row 2: Email label & field on same line -->
-        <div class="form-row">
-            <label for="email">E-post:</label>
-            <input type="email" id="email" name="email" placeholder="Din e-post" required>
-        </div>
-
-        <!-- Row 3: Message label alone -->
-        <div class="form-row">
-            <label for="message">Meddelande:</label>
-        </div>
-
-        <!-- Row 4: Message textarea -->
-        <div class="form-row">
-            <textarea id="message" name="message" placeholder="Skriv ett meddelande"></textarea>
-        </div>
-
-        <!-- Row 5: Dates on one line (start & end) with placeholders -->
+        <!-- Row 1: Startdatum & Slutdatum at the top (side by side) -->
         <div class="form-row">
             <label for="start-date">Startdatum:</label>
             <input 
                 type="date" 
                 id="start-date" 
                 name="start_date" 
+                class="short-date-field"
                 required 
                 placeholder="yyyy-mm-dd" 
                 onchange="calculateNights()"
@@ -88,15 +77,38 @@ function simple_booking_form() {
                 type="date" 
                 id="end-date" 
                 name="end_date" 
+                class="short-date-field"
                 required 
                 placeholder="yyyy-mm-dd" 
                 onchange="calculateNights()"
             >
         </div>
 
-        <!-- Row 6: Price display -->
+        <!-- Row 2: Price just underneath -->
         <div class="form-row">
             <p id="night-cost">Pris: 0 kr</p>
+        </div>
+
+        <!-- Row 3: Name label & field -->
+        <div class="form-row">
+            <label for="name">Namn:</label>
+            <input type="text" id="name" name="name" placeholder="Ditt namn" required style="width:250px;">
+        </div>
+
+        <!-- Row 4: Email label & field -->
+        <div class="form-row">
+            <label for="email">E-post:</label>
+            <input type="email" id="email" name="email" placeholder="Din e-post" required style="width:250px;">
+        </div>
+
+        <!-- Row 5: Message label -->
+        <div class="form-row">
+            <label for="message">Meddelande:</label>
+        </div>
+
+        <!-- Row 6: Larger textarea for message -->
+        <div class="form-row">
+            <textarea id="message" name="message" class="big-textarea" placeholder="Skriv ett meddelande"></textarea>
         </div>
 
         <!-- Row 7: Submit button -->
