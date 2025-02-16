@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Simple Booking Plugin
- * Description: Version 1.6.6 - Shows messages below the form and captures page slug in email subject.
- * Version: 1.6.6
+ * Description: Version 1.6.7 - Updated layout with placeholders for date fields (yyyy-mm-dd).
+ * Version: 1.6.7
  * Author: Miguel Barroso
  */
 
@@ -10,7 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-// Render form with messages displayed below the button
+// Shortcode function to render the form
 function simple_booking_form() {
     // Check if a response message exists via a query parameter
     $booking_response = '';
@@ -22,31 +22,89 @@ function simple_booking_form() {
             $booking_response = '<p style="color:red;">E-postmisslyckande: Kontrollera SMTP eller wp_mail-konfigurationen.</p>';
         }
     }
-    ob_start(); ?>
+
+    ob_start(); 
+    ?>
+    <!-- Inline CSS to demonstrate layout changes -->
+    <style>
+        #simple-booking-form .form-row {
+            margin-bottom: 10px;
+        }
+        #simple-booking-form label {
+            display: inline-block;
+            width: 100px; /* Adjust label width as needed */
+            margin-right: 5px;
+        }
+        #simple-booking-form input,
+        #simple-booking-form textarea {
+            padding: 5px;  /* The requested padding */
+            width: 250px;  /* Adjust input/textarea width as desired */
+            max-width: 100%; /* Ensure it stays responsive */
+        }
+    </style>
+
     <form id="simple-booking-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
         <input type="hidden" name="action" value="simple_booking">
         <?php wp_nonce_field( 'simple_booking_action', 'simple_booking_nonce' ); ?>
         <!-- Pass the current page slug so it can be used in the email subject -->
         <input type="hidden" name="page_slug" value="<?php echo esc_attr( get_post_field( 'post_name', get_post() ) ); ?>">
-        
-        <label for="name">Namn:</label>
-        <input type="text" id="name" name="name" placeholder="Ditt namn" required>
 
-        <label for="email">E-post:</label>
-        <input type="email" id="email" name="email" placeholder="Din e-post" required>
+        <!-- Row 1: Name label & field on same line -->
+        <div class="form-row">
+            <label for="name">Namn:</label>
+            <input type="text" id="name" name="name" placeholder="Ditt namn" required>
+        </div>
 
-        <label for="message">Meddelande:</label>
-        <textarea id="message" name="message" placeholder="Skriv ett meddelande"></textarea>
+        <!-- Row 2: Email label & field on same line -->
+        <div class="form-row">
+            <label for="email">E-post:</label>
+            <input type="email" id="email" name="email" placeholder="Din e-post" required>
+        </div>
 
-        <label for="start-date">Startdatum:</label>
-        <input type="date" id="start-date" name="start_date" required onchange="calculateNights()">
+        <!-- Row 3: Message label alone -->
+        <div class="form-row">
+            <label for="message">Meddelande:</label>
+        </div>
 
-        <label for="end-date">Slutdatum:</label>
-        <input type="date" id="end-date" name="end_date" required onchange="calculateNights()">
+        <!-- Row 4: Message textarea -->
+        <div class="form-row">
+            <textarea id="message" name="message" placeholder="Skriv ett meddelande"></textarea>
+        </div>
 
-        <p id="night-cost">Pris: 0 kr</p>
-        <button type="submit">Boka</button>
+        <!-- Row 5: Dates on one line (start & end) with placeholders -->
+        <div class="form-row">
+            <label for="start-date">Startdatum:</label>
+            <input 
+                type="date" 
+                id="start-date" 
+                name="start_date" 
+                required 
+                placeholder="yyyy-mm-dd" 
+                onchange="calculateNights()"
+            >
+
+            <label for="end-date" style="margin-left:20px;">Slutdatum:</label>
+            <input 
+                type="date" 
+                id="end-date" 
+                name="end_date" 
+                required 
+                placeholder="yyyy-mm-dd" 
+                onchange="calculateNights()"
+            >
+        </div>
+
+        <!-- Row 6: Price display -->
+        <div class="form-row">
+            <p id="night-cost">Pris: 0 kr</p>
+        </div>
+
+        <!-- Row 7: Submit button -->
+        <div class="form-row">
+            <button type="submit">Boka</button>
+        </div>
     </form>
+
     <div id="booking-response"><?php echo $booking_response; ?></div>
 
     <script>
@@ -66,7 +124,7 @@ function simple_booking_form() {
 }
 add_shortcode( 'simple_booking', 'simple_booking_form' );
 
-// Named function to set the email content type to plain text.
+// Named function to set the email content type to plain text
 function set_plain_text_mail_content_type() {
     return 'text/plain';
 }
@@ -78,17 +136,14 @@ function simple_booking_process() {
         exit;
     }
 
-    // Use the page slug passed via the hidden field
-    $page_slug = isset( $_POST['page_slug'] ) ? sanitize_text_field( $_POST['page_slug'] ) : 'n/a';
-    
-    $name           = sanitize_text_field( $_POST['name'] );
-    $email          = sanitize_email( $_POST['email'] );
-    $message_content= sanitize_textarea_field( $_POST['message'] );
-    $start_date     = sanitize_text_field( $_POST['start_date'] );
-    $end_date       = sanitize_text_field( $_POST['end_date'] );
+    $page_slug       = isset( $_POST['page_slug'] ) ? sanitize_text_field( $_POST['page_slug'] ) : 'n/a';
+    $name            = sanitize_text_field( $_POST['name'] );
+    $email           = sanitize_email( $_POST['email'] );
+    $message_content = sanitize_textarea_field( $_POST['message'] );
+    $start_date      = sanitize_text_field( $_POST['start_date'] );
+    $end_date        = sanitize_text_field( $_POST['end_date'] );
 
-    // Calculate nights (casting to integer to avoid decimals)
-    $nights = (int) max( 0, ( strtotime( $end_date ) - strtotime( $start_date ) ) / 86400 );
+    $nights      = (int) max( 0, ( strtotime( $end_date ) - strtotime( $start_date ) ) / 86400 );
     $total_price = $nights * 299;
 
     // Set the email to plain text
