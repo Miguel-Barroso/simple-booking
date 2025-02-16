@@ -1,29 +1,22 @@
 <?php
 /**
  * Plugin Name: Simple Booking Plugin
- * Description: Version 1.6.2 with code comments explaining all functionality and logic.
- * Version: 1.6.2
+ * Description: Version 1.6.3 - Critical fix for POST routing and email delivery issues.
+ * Version: 1.6.3
  * Author: Miguel Barroso
  */
 
-// Prevent direct access for security.
 if (!defined('ABSPATH')) {
     exit;
 }
 
-// Enqueue necessary styles.
-function simple_booking_enqueue_scripts() {
-    wp_enqueue_style('simple-booking-style', 'https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css');
-}
-add_action('wp_enqueue_scripts', 'simple_booking_enqueue_scripts');
-
-// Generate the booking form using a shortcode.
+// Proper form action to avoid 404 errors
 function simple_booking_form() {
     ob_start(); ?>
-    <form id="simple-booking-form" method="post" action="<?php echo esc_url($_SERVER['REQUEST_URI']); ?>">
+    <form id="simple-booking-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+        <input type="hidden" name="action" value="simple_booking">
         <?php wp_nonce_field('simple_booking_action', 'simple_booking_nonce'); ?>
 
-        <!-- User input fields for booking -->
         <label for="name">Namn:</label>
         <input type="text" id="name" name="name" placeholder="Ditt namn" required>
 
@@ -33,20 +26,17 @@ function simple_booking_form() {
         <label for="message">Meddelande:</label>
         <textarea id="message" name="message" placeholder="Skriv ett meddelande"></textarea>
 
-        <!-- Date selection with cost calculation -->
         <label for="start-date">Startdatum:</label>
         <input type="date" id="start-date" name="start_date" required onchange="calculateNights()">
 
         <label for="end-date">Slutdatum:</label>
         <input type="date" id="end-date" name="end_date" required onchange="calculateNights()">
 
-        <!-- Cost display section -->
         <p id="night-cost">Pris: 0 kr</p>
-        <button type="submit" name="simple_booking_submit">Boka</button>
+        <button type="submit">Boka</button>
     </form>
 
     <script>
-        // Live calculation of nights and cost
         function calculateNights() {
             const start = new Date(document.getElementById('start-date').value);
             const end = new Date(document.getElementById('end-date').value);
@@ -58,26 +48,18 @@ function simple_booking_form() {
             document.getElementById('night-cost').textContent = `Pris: ${nights * 299} kr (${nights} nätter)`;
         }
     </script>
-
     <?php
-    // Show thank-you message if the form is submitted correctly
-    if (isset($_POST['simple_booking_submit']) && wp_verify_nonce($_POST['simple_booking_nonce'], 'simple_booking_action')) {
-        simple_booking_process();
-        echo '<p style="color:green;">Tack för din bokning! Vi återkommer till dig inom kort.</p>';
-    }
     return ob_get_clean();
 }
 add_shortcode('simple_booking', 'simple_booking_form');
 
-// Process the booking form submission and send an email.
+// Enhanced form submission handling
 function simple_booking_process() {
-    // Security check with nonce verification
-    if (!wp_verify_nonce($_POST['simple_booking_nonce'], 'simple_booking_action')) {
-        echo '<p style="color:red;">Ogiltig begäran.</p>';
-        return;
+    if (!isset($_POST['simple_booking_nonce']) || !wp_verify_nonce($_POST['simple_booking_nonce'], 'simple_booking_action')) {
+        wp_die('Ogiltig begäran: Nonce misslyckades.');
     }
 
-    // Collect and sanitize user inputs
+    // Capture and sanitize user inputs
     $page_title = get_the_title();
     $name = sanitize_text_field($_POST['name']);
     $email = sanitize_email($_POST['email']);
@@ -85,11 +67,11 @@ function simple_booking_process() {
     $start_date = sanitize_text_field($_POST['start_date']);
     $end_date = sanitize_text_field($_POST['end_date']);
 
-    // Calculate nights and total cost
-    $nights = max(0, (strtotime($end_date) - strtotime($start_date)) / (60 * 60 * 24));
+    // Calculate booking price
+    $nights = max(0, (strtotime($end_date) - strtotime($start_date)) / (86400));
     $total_price = $nights * 299;
 
-    // Prepare and send email
+    // Fix for email content type and error detection
     add_filter('wp_mail_content_type', function() { return 'text/plain'; });
     $mail_result = wp_mail(
         get_option('admin_email'),
@@ -98,8 +80,14 @@ function simple_booking_process() {
     );
     remove_filter('wp_mail_content_type', function() { return 'text/plain'; });
 
-    // Notify user if email sending fails
     if (!$mail_result) {
-        echo '<p style="color:red;">E-post kunde inte skickas. Kontrollera e-postinställningarna.</p>';
+        wp_die('<p style="color:red;">E-postmisslyckande: Kontrollera SMTP eller wp_mail-konfigurationen.</p>');
+    } else {
+        echo '<p style="color:green;">Tack för din bokning! Vi återkommer inom kort.</p>';
     }
+    exit;
 }
+
+// Proper action hooks to handle form submission
+add_action('admin_post_simple_booking', 'simple_booking_process');
+add_action('admin_post_nopriv_simple_booking', 'simple_booking_process');
