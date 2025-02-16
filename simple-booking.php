@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Simple Booking Plugin
- * Description: Updated version with same-page confirmation, night calculation, and page-specific email subjects.
- * Version: 1.5
+ * Description: Version 1.6 with same-page confirmation fix and proper form handling.
+ * Version: 1.6
  * Author: Miguel Barroso
  */
 
@@ -11,19 +11,18 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-// Enqueue styles and scripts for night calculation.
+// Enqueue styles and scripts.
 function simple_booking_enqueue_scripts() {
     wp_enqueue_style('simple-booking-style', 'https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css');
-    wp_enqueue_script('simple-booking-script', '', [], false, true);
 }
 add_action('wp_enqueue_scripts', 'simple_booking_enqueue_scripts');
 
-// Shortcode to display the booking form and live cost calculation.
+// Shortcode for booking form with same-page submission.
 function simple_booking_form() {
     ob_start(); ?>
-    <form id="simple-booking-form" method="post">
-        <input type="hidden" name="action" value="simple_booking">
-
+    <form id="simple-booking-form" method="post" action="<?php echo esc_url($_SERVER['REQUEST_URI']); ?>">
+        <?php wp_nonce_field('simple_booking_action', 'simple_booking_nonce'); ?>
+        
         <label for="name">Namn:</label>
         <input type="text" id="name" name="name" placeholder="Ditt namn" required>
 
@@ -46,16 +45,24 @@ function simple_booking_form() {
 
     <script>
         function calculateNights() {
-            const start = new Date(document.getElementById('start-date').value);
-            const end = new Date(document.getElementById('end-date').value);
+            const startValue = document.getElementById('start-date').value;
+            const endValue = document.getElementById('end-date').value;
+            if (!startValue || !endValue) {
+                document.getElementById('night-cost').textContent = 'Pris: 0 kr';
+                return;
+            }
+            
+            const start = new Date(startValue);
+            const end = new Date(endValue);
             const nights = Math.max(0, Math.floor((end - start) / (1000 * 60 * 60 * 24)));
-            const cost = nights * 299;
+            const cost = isNaN(nights) ? 0 : nights * 299;
+            
             document.getElementById('night-cost').textContent = `Pris: ${cost} kr (${nights} nätter)`;
         }
     </script>
 
     <?php
-    if (isset($_POST['name'])) {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['name']) && wp_verify_nonce($_POST['simple_booking_nonce'], 'simple_booking_action')) {
         echo '<p style="color:green;">Tack för din bokning! Vi återkommer till dig inom kort.</p>';
     }
     return ob_get_clean();
@@ -64,8 +71,11 @@ add_shortcode('simple_booking', 'simple_booking_form');
 
 // Handle form submission and send an email.
 function simple_booking_process() {
-    $page_title = get_the_title();
+    if (!wp_verify_nonce($_POST['simple_booking_nonce'], 'simple_booking_action')) {
+        wp_die('Ogiltig begäran.');
+    }
 
+    $page_title = get_the_title();
     $name = sanitize_text_field($_POST['name']);
     $email = sanitize_email($_POST['email']);
     $message_content = sanitize_textarea_field($_POST['message']);
