@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Simple Booking Plugin
- * Description: A simple booking plugin with name, email, message fields, start/end date pickers, and email notification.
- * Version: 1.2
+ * Description: Booking plugin with name, email, message fields, start/end dates, and proper form submission handling.
+ * Version: 1.4
  * Author: Miguel Barroso
  */
 
@@ -11,16 +11,18 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-// Use HTML5 native datepicker without jQuery
+// Enqueue styles
 function simple_booking_enqueue_scripts() {
     wp_enqueue_style('simple-booking-style', 'https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css');
 }
 add_action('wp_enqueue_scripts', 'simple_booking_enqueue_scripts');
 
-// Shortcode for the booking form
+// Shortcode for booking form
 function simple_booking_form() {
     ob_start(); ?>
-    <form id="simple-booking-form" method="post">
+    <form id="simple-booking-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+        <input type="hidden" name="action" value="simple_booking">
+        
         <label for="name">Namn:</label>
         <input type="text" id="name" name="name" placeholder="Ditt namn" required>
 
@@ -31,10 +33,10 @@ function simple_booking_form() {
         <textarea id="message" name="message" placeholder="Skriv ett meddelande"></textarea>
 
         <label for="start-date">Startdatum:</label>
-        <input type="date" id="start-date" name="start_date" pattern="\\d{4}-\\d{2}-\\d{2}" placeholder="ÅÅÅÅ-MM-DD" required>
+        <input type="date" id="start-date" name="start_date" required>
 
         <label for="end-date">Slutdatum:</label>
-        <input type="date" id="end-date" name="end_date" pattern="\\d{4}-\\d{2}-\\d{2}" placeholder="ÅÅÅÅ-MM-DD" required>
+        <input type="date" id="end-date" name="end_date" required>
 
         <button type="submit">Boka</button>
     </form>
@@ -43,31 +45,22 @@ function simple_booking_form() {
 }
 add_shortcode('simple_booking', 'simple_booking_form');
 
-// Handle form submission and send email
-function simple_booking_handle_submission() {
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['name'], $_POST['email'], $_POST['message'], $_POST['start_date'], $_POST['end_date'])) {
-        $name = sanitize_text_field($_POST['name']);
-        $email = sanitize_email($_POST['email']);
-        $message_content = sanitize_textarea_field($_POST['message']);
-        $start_date = sanitize_text_field($_POST['start_date']);
-        $end_date = sanitize_text_field($_POST['end_date']);
-        
-        // Email details in Swedish
-        $to = get_option('admin_email');
-        $subject = 'Ny Bokningsförfrågan';
-        $message = "En ny bokningsförfrågan har inkommit:\n\n" .
-                   "Namn: $name\n" .
-                   "E-post: $email\n" .
-                   "Meddelande: $message_content\n" .
-                   "Period: $start_date till $end_date";
-        $headers = ['Content-Type: text/plain; charset=UTF-8'];
+// Handle form submission using admin_post
+function simple_booking_process() {
+    $name = sanitize_text_field($_POST['name']);
+    $email = sanitize_email($_POST['email']);
+    $message_content = sanitize_textarea_field($_POST['message']);
+    $start_date = sanitize_text_field($_POST['start_date']);
+    $end_date = sanitize_text_field($_POST['end_date']);
 
-        // Send email
-        if (wp_mail($to, $subject, $message, $headers)) {
-            echo '<p style="color:green;">Bokningsförfrågan skickades!</p>';
-        } else {
-            echo '<p style="color:red;">Det gick inte att skicka bokningsförfrågan.</p>';
-        }
-    }
+    $to = get_option('admin_email');
+    $subject = 'Ny Bokningsförfrågan';
+    $message = "Namn: $name\nE-post: $email\nMeddelande: $message_content\nPeriod: $start_date till $end_date";
+    $headers = ['Content-Type: text/plain; charset=UTF-8'];
+
+    wp_mail($to, $subject, $message, $headers);
+    wp_safe_redirect(home_url('/tack-for-din-bokning/'));
+    exit;
 }
-add_action('wp_footer', 'simple_booking_handle_submission');
+add_action('admin_post_simple_booking', 'simple_booking_process');
+add_action('admin_post_nopriv_simple_booking', 'simple_booking_process');
